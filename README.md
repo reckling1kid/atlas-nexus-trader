@@ -1,6 +1,6 @@
 # Atlas Nexus Trader
 
-A modular Python trading-bot starter built **paper-trading first**. It supports deterministic synthetic demo candles by default and optional local CSV candles; it never connects to a broker or places real orders.
+A paper-only trading research scaffold with deterministic specialist agents, local CSV input, and historical replay. It has **no broker connection and no live-order capability**. It is not a proven profitable strategy or investment service.
 
 ## Quick start
 
@@ -10,23 +10,33 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 python -m atlas_nexus_trader
+pytest
 ```
 
-Run tests with `pytest`.
+## Six cooperating analysis agents
+
+The agents are deterministic Python components, not independent LLMs or autonomous traders. They share the same validated candle history, emit structured explanations, and cannot place orders:
+
+1. **Trend** — compares short and longer simple moving averages.
+2. **Momentum** — classifies RSI into directional/neutral ranges.
+3. **Gap** — measures the latest open against the preceding close; it is a basic gap observation, not a standalone execution instruction.
+4. **Volume** — checks current volume against prior positive-volume bars and candle direction.
+5. **Volatility risk** — vetoes a directional decision when recent per-bar return volatility exceeds the configured threshold; vetoes also apply when there is too little history to estimate risk.
+6. **Decision** — requires at least three of four directional analysts to agree and respects the risk veto; otherwise returns HOLD.
+
+All thresholds are configurable in code/environment and are simple heuristics, not calibrated market models. Agreement is not proof of accuracy. The default `paper` mode prints each agent's assessment and places **no simulated or real order**.
 
 ## CSV candle input
 
-Set `ATLAS_CANDLES_CSV` to a local CSV path to load candles instead of the synthetic demo series:
+Set `ATLAS_CANDLES_CSV` to a local CSV path. Required header columns are `timestamp,open,high,low,close`; `volume` is optional and defaults to zero. ISO-8601 timestamps (including UTC `Z`) must be strictly increasing. Data is read locally only.
 
 ```bash
 ATLAS_CANDLES_CSV=data/candles.csv python -m atlas_nexus_trader
 ```
 
-The CSV must have a header with `timestamp,open,high,low,close`; `volume` is optional and defaults to `0`. Timestamps use ISO-8601 format (`Z` is accepted), and rows must be in strictly increasing order. The loader validates OHLCV values and reads only local files; it does not fetch market data.
+## Historical replay
 
-## Historical backtest
-
-Set `ATLAS_MODE=backtest` to replay the loaded candles. The strategy sees only bars before the current one, and signals execute at the next bar's open. Any remaining position is liquidated at the final close. Optional cost settings are in basis points:
+Run the same multi-agent strategy over historical candles with next-bar-open fills:
 
 ```bash
 ATLAS_MODE=backtest ATLAS_CANDLES_CSV=data/candles.csv \\
@@ -34,36 +44,35 @@ ATLAS_MODE=backtest ATLAS_CANDLES_CSV=data/candles.csv \\
   python -m atlas_nexus_trader
 ```
 
-The output reports ending cash after liquidation, total return, maximum drawdown, fill count, and fees. The default cost assumptions are zero, so specify realistic fees and slippage for evaluation. This small simulator does not model spreads, market impact, partial fills, dividends, or taxes; it is educational and is not evidence of a profitable strategy. Synthetic demo candles are not market data, and historical CSV data may be stale or inaccurate.
+Replay applies configured fee and adverse slippage on fills, checks the daily loss threshold before new entries, marks equity each bar, and liquidates any open position at the last close. Costs default to zero in code; configure realistic costs. Results are highly sensitive to data quality, thresholds, costs, and sample selection. This basic simulator does not model spreads, market impact, partial fills, dividends, financing, taxes, corporate actions, borrow availability, or exchange calendars. It does not provide walk-forward validation, benchmark comparisons, or statistical significance testing. Validate on unseen data and use conservative assumptions; historical results do not predict future performance.
 
-## Modes and safety
+Settings:
 
-- Default `ATLAS_MODE=paper` is a one-shot **paper snapshot**, not a continuously running trading system. It evaluates the supplied history and illustrates a simulated fill at the final close; it should not be used to infer a deployable live signal.
-- `ATLAS_MODE=backtest` is historical replay only. Both modes are paper-only and have no broker integration.
-- Signals and sample strategy are educational software, not financial advice or a claim of profitability.
-- Do not add broker credentials or enable live execution without independent review, comprehensive testing, and explicit safeguards.
+- `ATLAS_MODE`: `paper` (default, analysis only) or `backtest`.
+- `ATLAS_CANDLES_CSV`: optional local history; absent means synthetic demo data (not market data).
+- `ATLAS_BACKTEST_FEE_BPS`, `ATLAS_BACKTEST_SLIPPAGE_BPS`: simulated per-fill costs in basis points.
+- `ATLAS_MIN_GAP_BPS`: minimum opening gap for the gap agent (default 10).
+- `ATLAS_MAX_BAR_VOLATILITY`: volatility veto threshold (default 0.05).
 
-## Layout
+## Safety and product readiness
+
+This is an experimental software scaffold, **not ready to sell or advertise as accurate, reliable, or profitable**. Before any commercial use, get qualified legal/compliance advice, use properly licensed reliable data, threat-model and security-review the application, add reproducible out-of-sample validation, benchmark/cost modeling, robust observability and operational controls, and obtain independent review. Paper results are not a guarantee. Never put credentials in the repository. Live trading is deliberately not implemented.
+
+## Project layout
 
 ```text
 atlas_nexus_trader/
-  __main__.py
+  agents.py
   app.py
   backtest.py
   config.py
   csv_data.py
-  models.py
-  indicators.py
-  signals.py
-  risk.py
-  paper_broker.py
   demo_data.py
+  indicators.py
+  models.py
+  paper_broker.py
+  risk.py
+  signals.py
   storage.py
 tests/
 ```
-
-## Next steps
-
-1. Add robust reporting for benchmark comparison and out-of-sample evaluation.
-2. Persist positions and risk state, and add monitoring/alerts.
-3. Keep execution paper-only until the full system has been reviewed and tested.

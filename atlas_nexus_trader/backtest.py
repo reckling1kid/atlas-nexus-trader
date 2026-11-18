@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 import math
 
 from .models import Action, Candle, Signal
@@ -9,7 +9,7 @@ from .signals import MovingAverageRsiStrategy
 
 @dataclass(frozen=True)
 class EquityPoint:
-    timestamp: object
+    timestamp: datetime
     equity: float
 
 
@@ -50,6 +50,7 @@ def run_backtest(
         raise ValueError("fee_bps and slippage_bps must be less than 10000")
     if not candles:
         raise ValueError("at least one candle is required")
+    _validate_candles(candles)
 
     strategy = strategy or MovingAverageRsiStrategy()
     cash = initial_cash
@@ -123,6 +124,20 @@ def run_backtest(
         fees_paid=fees_paid,
         equity_curve=tuple(equity_curve),
     )
+
+
+def _validate_candles(candles: Sequence[Candle]) -> None:
+    first = candles[0].timestamp
+    previous = first
+    for index, candle in enumerate(candles):
+        timestamp = candle.timestamp
+        if not isinstance(timestamp, datetime):
+            raise ValueError(f"candle {index}: timestamp must be a datetime")
+        if index and ((timestamp.tzinfo is None) != (first.tzinfo is None)):
+            raise ValueError(f"candle {index}: timestamps must use a consistent timezone")
+        if index and timestamp <= previous:
+            raise ValueError(f"candle {index}: timestamps must be strictly increasing")
+        previous = timestamp
 
 
 def _positive_finite(name: str, value: float) -> None:

@@ -1,14 +1,11 @@
 import logging
 import os
 
+from .agents import MultiAgentStrategy
 from .backtest import run_backtest
 from .config import Settings
 from .csv_data import load_candles_csv
 from .demo_data import make_demo_candles
-from .models import Action
-from .paper_broker import PaperBroker
-from .risk import RiskManager
-from .signals import MovingAverageRsiStrategy
 
 
 def _env_float(name: str, default: float) -> float:
@@ -34,6 +31,10 @@ def run(settings: Settings | None = None) -> None:
         candles = make_demo_candles()
         data_source = "synthetic demo data"
 
+    strategy = MultiAgentStrategy(
+        min_gap_bps=_env_float("ATLAS_MIN_GAP_BPS", 10.0),
+        max_bar_volatility=_env_float("ATLAS_MAX_BAR_VOLATILITY", 0.05),
+    )
     mode = os.getenv("ATLAS_MODE", "paper").strip().lower()
     if mode == "backtest":
         result = run_backtest(
@@ -43,6 +44,7 @@ def run(settings: Settings | None = None) -> None:
             max_daily_loss=settings.max_daily_loss,
             fee_bps=_env_float("ATLAS_BACKTEST_FEE_BPS", 0.0),
             slippage_bps=_env_float("ATLAS_BACKTEST_SLIPPAGE_BPS", 0.0),
+            strategy=strategy,
         )
         logger.info("Mode: BACKTEST (paper simulation) | Symbol: %s | Candles: %s", settings.symbol, data_source)
         logger.info(
@@ -57,28 +59,12 @@ def run(settings: Settings | None = None) -> None:
     if mode != "paper":
         raise ValueError("ATLAS_MODE must be 'paper' or 'backtest'")
 
-    strategy = MovingAverageRsiStrategy()
-    broker = PaperBroker(settings.initial_cash)
-    risk = RiskManager(settings.max_position_units, settings.max_daily_loss)
-    signal = strategy.generate(candles)
-    latest = candles[-1]
-    decision = risk.validate(signal, settings.max_position_units, daily_pnl=0.0)
-
-    logger.info("Mode: PAPER SNAPSHOT | Symbol: %s | Candles: %s", settings.symbol, data_source)
-    logger.info("Signal on supplied history: %s (%s)", signal.action.value, signal.reason)
-    if decision.allowed:
-        if signal.action is Action.SELL and broker.position_units < settings.max_position_units:
-            logger.info("No paper position to sell; simulated sell skipped")
-        else:
-            try:
-                trade = broker.execute(settings.symbol, signal.action, settings.max_position_units, latest)
-            except ValueError as exc:
-                logger.info("Paper execution rejected: %s", exc)
-            else:
-                logger.info("Illustrative simulated fill at final close: %s %.4f @ %.4f; paper cash %.2f", trade.action.value, trade.units, trade.price, trade.cash_after)
-    else:
-        logger.info("No trade: %s", decision.reason)
-    logger.info("Paper position: %.4f units; paper cash: %.2f", broker.position_units, broker.cash)
+    analysis = strategy.analyze(candles)
+    logger.info("Mode: PAPER ANALYSIS ONLY | Symbol: %s | Candles: %s", settings.symbol, data_source)
+    for assessment in analysis.assessments:
+        logger.info("Agent %s: %s (confidence %.0f%%) — %s", assessment.agent, assessment.action.value, assessment.confidence * 100, assessment.reason)
+    logger.info("Consensus: %s (%s). No order was placed.", analysis.signal.action.value, analysis.signal.reason)
+    logger.info("Historical dataset bars: %d; minimum for all agents is 12", len(candles))
 
 
 def main() -> None:
