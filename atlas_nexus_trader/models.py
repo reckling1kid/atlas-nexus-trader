@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+import math
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,8 @@ class Candle:
     volume: float = 0.0
 
     def __post_init__(self) -> None:
+        if not all(math.isfinite(value) for value in (self.open, self.high, self.low, self.close, self.volume)):
+            raise ValueError("OHLCV values must be finite numbers")
         if min(self.open, self.high, self.low, self.close) <= 0:
             raise ValueError("OHLC prices must be positive")
         if self.high < max(self.open, self.close, self.low):

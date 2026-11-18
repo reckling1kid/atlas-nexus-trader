@@ -41,3 +41,27 @@ def test_load_csv_rejects_non_increasing_timestamps(tmp_path):
 
     with pytest.raises(ValueError, match="strictly increasing"):
         load_candles_csv(path)
+
+
+def test_load_csv_rejects_non_finite_values(tmp_path):
+    path = tmp_path / "candles.csv"
+    path.write_text(
+        "timestamp,open,high,low,close\n"
+        "2026-01-01T00:00:00Z,10,nan,9,11\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        load_candles_csv(path)
+
+
+def test_load_csv_rejects_rows_with_extra_columns(tmp_path):
+    path = tmp_path / "candles.csv"
+    path.write_text(
+        "timestamp,open,high,low,close\n"
+        "2026-01-01T00:00:00Z,10,12,9,11,unexpected\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="too many columns"):
+        load_candles_csv(path)
