@@ -1,6 +1,8 @@
 import logging
+import os
 
 from .config import Settings
+from .csv_data import load_candles_csv
 from .demo_data import make_demo_candles
 from .paper_broker import PaperBroker
 from .risk import RiskManager
@@ -12,8 +14,14 @@ def run(settings: Settings | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logger = logging.getLogger("atlas_nexus_trader")
 
-    # This first milestone intentionally uses generated demo candles and simulated fills.
-    candles = make_demo_candles()
+    csv_path = os.getenv("ATLAS_CANDLES_CSV")
+    if csv_path:
+        candles = load_candles_csv(csv_path)
+        data_source = f"CSV: {csv_path}"
+    else:
+        candles = make_demo_candles()
+        data_source = "synthetic demo data"
+
     strategy = MovingAverageRsiStrategy()
     broker = PaperBroker(settings.initial_cash)
     risk = RiskManager(settings.max_position_units, settings.max_daily_loss)
@@ -21,7 +29,7 @@ def run(settings: Settings | None = None) -> None:
     latest = candles[-1]
     decision = risk.validate(signal, settings.max_position_units, daily_pnl=0.0)
 
-    logger.info("Mode: PAPER ONLY | Symbol: %s | Candles: synthetic demo data", settings.symbol)
+    logger.info("Mode: PAPER ONLY | Symbol: %s | Candles: %s", settings.symbol, data_source)
     logger.info("Signal: %s (%s)", signal.action.value, signal.reason)
     if decision.allowed:
         trade = broker.execute(settings.symbol, signal.action, settings.max_position_units, latest)
